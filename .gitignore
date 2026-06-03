@@ -5,7 +5,10 @@ target/
 .idea/
 .vscode/
 *.iml
-java_output.pcap
 
+java_output.pcap
 *.pcap
+
 rules.txt
+
+reports/

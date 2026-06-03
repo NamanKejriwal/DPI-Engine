@@ -23,6 +23,10 @@ public class GlobalConnectionTable {
         }
     }
 
+    public List<ConnectionTracker> getTrackers() {
+        return trackers;
+    }
+
     public void registerTracker(int fpId, ConnectionTracker tracker) {
         lock.writeLock().lock();
         try {

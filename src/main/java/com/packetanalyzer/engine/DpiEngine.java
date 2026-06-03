@@ -12,6 +12,7 @@ import com.packetanalyzer.types.PacketJob;
 import com.packetanalyzer.types.ParsedPacket;
 import com.packetanalyzer.types.AppType;
 import com.packetanalyzer.io.ByteUtils;
+import com.packetanalyzer.analytics.AnalyticsManager;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -144,6 +145,7 @@ public class DpiEngine {
     }
 
     public boolean processFile(String inputFile, String outputFile) {
+        long startTime = System.currentTimeMillis();
         System.out.println("\n[DPIEngine] Processing: " + inputFile);
         System.out.println("[DPIEngine] Output to:  " + outputFile + "\n");
 
@@ -182,6 +184,9 @@ public class DpiEngine {
 
         System.out.print(generateReport());
         System.out.print(globalConnTable.generateReport());
+
+        long runtimeMs = System.currentTimeMillis() - startTime;
+        AnalyticsManager.exportAll(stats, globalConnTable, inputFile, runtimeMs);
 
         return true;
     }

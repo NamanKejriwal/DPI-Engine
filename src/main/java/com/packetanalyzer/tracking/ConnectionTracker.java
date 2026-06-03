@@ -22,6 +22,20 @@ public class ConnectionTracker {
     private long classifiedCount = 0;
     private long blockedCount = 0;
 
+    // Cumulative Accumulators for Analytics
+    public static class AppStats {
+        public long connections = 0;
+        public long packets = 0;
+        public long bytes = 0;
+    }
+
+    private final Map<AppType, AppStats> cumulativeAppStats = new HashMap<>();
+    private final Map<String, Long> cumulativeDomainStats = new HashMap<>();
+    private final Map<Integer, Long> cumulativeTopTalkers = new HashMap<>();
+    
+    // Configurable limit to prevent DGA/randomized SNI domain exhaustion
+    private static final int MAX_TRACKED_DOMAINS = 50000;
+
     public static class TrackerStats {
         public int activeConnections;
         public long totalConnectionsSeen;
@@ -102,6 +116,28 @@ public class ConnectionTracker {
         }
     }
 
+    private void recordEvictedConnection(Connection conn) {
+        if (conn == null) return;
+        
+        // Accumulate Application Stats
+        AppStats appStats = cumulativeAppStats.computeIfAbsent(conn.appType, k -> new AppStats());
+        appStats.connections++;
+        appStats.packets += (conn.packetsIn + conn.packetsOut);
+        appStats.bytes += (conn.bytesIn + conn.bytesOut);
+
+        // Accumulate Domain Stats
+        if (conn.sni != null && !conn.sni.isEmpty()) {
+            if (cumulativeDomainStats.size() >= MAX_TRACKED_DOMAINS && !cumulativeDomainStats.containsKey(conn.sni)) {
+                cumulativeDomainStats.put("<OTHER>", cumulativeDomainStats.getOrDefault("<OTHER>", 0L) + 1);
+            } else {
+                cumulativeDomainStats.put(conn.sni, cumulativeDomainStats.getOrDefault(conn.sni, 0L) + 1);
+            }
+        }
+        
+        // Accumulate Top Talkers (Source IP)
+        cumulativeTopTalkers.put(conn.tuple.srcIp, cumulativeTopTalkers.getOrDefault(conn.tuple.srcIp, 0L) + 1);
+    }
+
     public int cleanupStale(long timeoutNanos) {
         long now = System.nanoTime();
         int removed = 0;
@@ -112,6 +148,7 @@ public class ConnectionTracker {
             Connection conn = entry.getValue();
             
             if ((now - conn.lastSeen) > timeoutNanos || conn.state == ConnectionState.CLOSED) {
+                recordEvictedConnection(conn);
                 it.remove();
                 removed++;
             }
@@ -144,6 +181,9 @@ public class ConnectionTracker {
     }
 
     public void clear() {
+        for (Connection conn : connections.values()) {
+            recordEvictedConnection(conn);
+        }
         connections.clear();
     }
 
@@ -152,16 +192,31 @@ public class ConnectionTracker {
         
         FiveTuple oldestKey = null;
         long oldestTime = Long.MAX_VALUE;
+        Connection oldestConn = null;
         
         for (Map.Entry<FiveTuple, Connection> entry : connections.entrySet()) {
             if (entry.getValue().lastSeen < oldestTime) {
                 oldestTime = entry.getValue().lastSeen;
                 oldestKey = entry.getKey();
+                oldestConn = entry.getValue();
             }
         }
         
         if (oldestKey != null) {
+            recordEvictedConnection(oldestConn);
             connections.remove(oldestKey);
         }
+    }
+
+    public Map<AppType, AppStats> getCumulativeAppStats() {
+        return cumulativeAppStats;
+    }
+
+    public Map<String, Long> getCumulativeDomainStats() {
+        return cumulativeDomainStats;
+    }
+
+    public Map<Integer, Long> getCumulativeTopTalkers() {
+        return cumulativeTopTalkers;
     }
 }
