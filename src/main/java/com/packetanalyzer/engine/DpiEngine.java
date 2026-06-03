@@ -62,17 +62,30 @@ public class DpiEngine {
         ruleManager = new RuleManager();
         if (config.rulesFile != null && !config.rulesFile.isEmpty()) {
             ruleManager.loadRules(config.rulesFile);
+            
+            RuleManager.RuleStats rstats = ruleManager.getStats();
+            System.out.println("\n==================================================");
+            System.out.println("RULE ENGINE");
+            System.out.println("===========\n");
+            System.out.println("Rules File:");
+            System.out.println(config.rulesFile + "\n");
+            System.out.println("Loaded Rules:");
+            System.out.println("Domains: " + rstats.blockedDomains);
+            System.out.println("IPs: " + rstats.blockedIps);
+            System.out.println("Ports: " + rstats.blockedPorts);
+            System.out.println("Applications: " + rstats.blockedApps);
+            System.out.println("\n==================================================");
         }
 
         int totalFps = config.numLoadBalancers * config.fpsPerLb;
         globalConnTable = new GlobalConnectionTable(totalFps);
 
-        FastPathProcessor.PacketOutputCallback outputCb = (job, action) -> handleOutput(job, action);
+        FastPathProcessor.PacketOutputCallback outputCb = (job, action, reason) -> handleOutput(job, action, reason);
 
         List<LinkedBlockingQueue<PacketJob>> allFpQueues = new ArrayList<>();
 
         for (int i = 0; i < totalFps; i++) {
-            FastPathProcessor fp = new FastPathProcessor(i, ruleManager, outputCb);
+            FastPathProcessor fp = new FastPathProcessor(i, ruleManager, stats, config.verbose, outputCb);
             fastPathProcessors.add(fp);
             allFpQueues.add(fp.getInputQueue());
             globalConnTable.registerTracker(i, fp.getConnectionTracker());
@@ -277,7 +290,7 @@ public class DpiEngine {
         return job;
     }
 
-    private void handleOutput(PacketJob job, PacketAction action) {
+    private void handleOutput(PacketJob job, PacketAction action, RuleManager.BlockReason reason) {
         if (action == PacketAction.DROP) {
             stats.droppedPackets.incrementAndGet();
             return;
@@ -371,6 +384,18 @@ public class DpiEngine {
         }
         
         ss.append("╚══════════════════════════════════════════════════════════════╝\n");
+        
+        ss.append("\n==================================================\n");
+        ss.append("RULE STATISTICS\n");
+        ss.append("===============\n\n");
+        ss.append("Blocked By Domain: ").append(stats.blockedByDomain.get()).append("\n");
+        ss.append("Blocked By IP: ").append(stats.blockedByIp.get()).append("\n");
+        ss.append("Blocked By Port: ").append(stats.blockedByPort.get()).append("\n");
+        ss.append("Blocked By Application: ").append(stats.blockedByApp.get()).append("\n\n");
+        
+        long totalBlockedFlows = stats.blockedByDomain.get() + stats.blockedByIp.get() + stats.blockedByPort.get() + stats.blockedByApp.get();
+        ss.append("Total Blocked Flows: ").append(totalBlockedFlows).append("\n\n");
+        ss.append("==================================================\n");
         
         return ss.toString();
     }

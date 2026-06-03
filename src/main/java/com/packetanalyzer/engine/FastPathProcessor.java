@@ -6,6 +6,7 @@ import com.packetanalyzer.extractors.SniExtractor;
 import com.packetanalyzer.rules.RuleManager;
 import com.packetanalyzer.tracking.ConnectionTracker;
 import com.packetanalyzer.types.*;
+import com.packetanalyzer.io.ByteUtils;
 
 import java.util.Optional;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -16,7 +17,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class FastPathProcessor implements Runnable {
 
     public interface PacketOutputCallback {
-        void onPacketProcessed(PacketJob job, PacketAction action);
+        void onPacketProcessed(PacketJob job, PacketAction action, RuleManager.BlockReason reason);
     }
 
     private final int fpId;
@@ -34,11 +35,16 @@ public class FastPathProcessor implements Runnable {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private Thread thread;
 
-    public FastPathProcessor(int fpId, RuleManager ruleManager, PacketOutputCallback outputCallback) {
+    private final boolean verbose;
+    private final DPIStats globalStats;
+
+    public FastPathProcessor(int fpId, RuleManager ruleManager, DPIStats globalStats, boolean verbose, PacketOutputCallback outputCallback) {
         this.fpId = fpId;
         this.inputQueue = new LinkedBlockingQueue<>(10000);
         this.connTracker = new ConnectionTracker(fpId, 50000); // Max connections per FP
         this.ruleManager = ruleManager;
+        this.globalStats = globalStats;
+        this.verbose = verbose;
         this.outputCallback = outputCallback;
     }
 
@@ -115,10 +121,11 @@ public class FastPathProcessor implements Runnable {
 
                 packetsProcessed.incrementAndGet();
 
-                PacketAction action = processPacket(job);
+                RuleManager.BlockReason reason = processPacket(job);
+                PacketAction action = (reason == null) ? PacketAction.FORWARD : PacketAction.DROP;
 
                 if (outputCallback != null) {
-                    outputCallback.onPacketProcessed(job, action);
+                    outputCallback.onPacketProcessed(job, action, reason);
                 }
 
                 if (action == PacketAction.DROP) {
@@ -136,10 +143,10 @@ public class FastPathProcessor implements Runnable {
         }
     }
 
-    private PacketAction processPacket(PacketJob job) {
+    private RuleManager.BlockReason processPacket(PacketJob job) {
         Connection conn = connTracker.getOrCreateConnection(job.tuple);
         if (conn == null) {
-            return PacketAction.FORWARD;
+            return null; // FORWARD
         }
 
         // Outbound is true
@@ -150,7 +157,7 @@ public class FastPathProcessor implements Runnable {
         }
 
         if (conn.state == ConnectionState.BLOCKED) {
-            return PacketAction.DROP;
+            return new RuleManager.BlockReason(RuleManager.BlockReason.Type.APP, "Flow already blocked"); // We just return something so it gets dropped
         }
 
         if (conn.state != ConnectionState.CLASSIFIED && job.payloadLength > 0) {
@@ -221,20 +228,34 @@ public class FastPathProcessor implements Runnable {
         return false;
     }
 
-    private PacketAction checkRules(PacketJob job, Connection conn) {
-        if (ruleManager == null) return PacketAction.FORWARD;
+    private RuleManager.BlockReason checkRules(PacketJob job, Connection conn) {
+        if (ruleManager == null) return null;
 
-        Optional<RuleManager.BlockReason> reason = ruleManager.shouldBlock(
+        Optional<RuleManager.BlockReason> reasonOpt = ruleManager.shouldBlock(
                 job.tuple.srcIp, job.tuple.dstPort, conn.appType, conn.sni
         );
 
-        if (reason.isPresent()) {
-            RuleManager.BlockReason br = reason.get();
-            System.out.println("[FP" + fpId + "] BLOCKED packet: " + br.type + " " + br.detail);
+        if (reasonOpt.isPresent()) {
+            RuleManager.BlockReason br = reasonOpt.get();
+            if (verbose) {
+                System.out.println("[BLOCKED]");
+                System.out.println("Flow: " + ByteUtils.ipToString(job.tuple.srcIp) + ":" + job.tuple.srcPort + " -> " + 
+                    (conn.sni != null && !conn.sni.isEmpty() ? conn.sni : ByteUtils.ipToString(job.tuple.dstIp) + ":" + job.tuple.dstPort));
+                System.out.println("Rule: " + br.getFormattedRule());
+            }
             connTracker.blockConnection(conn);
-            return PacketAction.DROP;
+            
+            if (globalStats != null) {
+                switch (br.type) {
+                    case IP: globalStats.blockedByIp.incrementAndGet(); break;
+                    case APP: globalStats.blockedByApp.incrementAndGet(); break;
+                    case DOMAIN: globalStats.blockedByDomain.incrementAndGet(); break;
+                    case PORT: globalStats.blockedByPort.incrementAndGet(); break;
+                }
+            }
+            return br;
         }
-        return PacketAction.FORWARD;
+        return null;
     }
 
     private void updateTCPState(Connection conn, int tcpFlags) {

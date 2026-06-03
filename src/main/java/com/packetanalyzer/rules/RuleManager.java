@@ -35,6 +35,10 @@ public class RuleManager {
             this.type = type;
             this.detail = detail;
         }
+
+        public String getFormattedRule() {
+            return "BLOCK_" + type.name() + "=" + detail;
+        }
     }
 
     public static class RuleStats {
@@ -132,22 +136,37 @@ public class RuleManager {
         }
     }
 
-    public boolean isDomainBlocked(String domain) {
+    public boolean isDomainBlocked(String domain) 
+    {
         if (domain == null || domain.isEmpty()) return false;
-        
+
         String lowerDomain = domain.toLowerCase();
-        
+
         domainLock.readLock().lock();
         try {
-            if (blockedDomains.contains(lowerDomain)) {
+
+        // Exact match
+        if (blockedDomains.contains(lowerDomain)) {
+            return true;
+        }
+
+        // Wildcard patterns (*.facebook.com)
+        for (String pattern : domainPatterns) {
+            if (lowerDomain.equals(pattern) ||
+                lowerDomain.endsWith("." + pattern)) {
                 return true;
             }
-            for (String pattern : domainPatterns) {
-                if (lowerDomain.equals(pattern) || lowerDomain.endsWith("." + pattern)) {
-                    return true;
-                }
+        }
+
+        // Root domain -> subdomain matching
+        for (String blockedDomain : blockedDomains) {
+            if (lowerDomain.endsWith("." + blockedDomain)) {
+                return true;
             }
-            return false;
+        }
+
+        return false;
+
         } finally {
             domainLock.readLock().unlock();
         }
@@ -188,6 +207,28 @@ public class RuleManager {
     }
 
     public boolean loadRules(String filename) {
+        // Read the first non-blank line to detect format
+        try (BufferedReader reader = new BufferedReader(new FileReader(filename))) {
+            String line;
+            boolean isNewFormat = false;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty() || line.startsWith("#")) continue;
+                if (line.contains("=")) {
+                    isNewFormat = true;
+                }
+                break; // Detected first line
+            }
+            
+            if (isNewFormat) {
+                RuleFileParser.parseAndLoad(filename, this);
+                return true;
+            }
+        } catch (IOException e) {
+            return false;
+        }
+
+        // Fallback to INI format parsing
         try (BufferedReader reader = new BufferedReader(new FileReader(filename))) {
             String line;
             String section = "";
