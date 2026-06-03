@@ -1,462 +1,394 @@
-# DPI Engine
+<div align="center">
+  <h1>DPI Engine</h1>
+  <p><b>Multi-threaded Deep Packet Inspection Engine built in Java 21</b></p>
+  
+  <p>
+    <img src="https://img.shields.io/badge/Java-21-orange.svg" alt="Java 21" />
+    <img src="https://img.shields.io/badge/Maven-Build-blue.svg" alt="Maven Build" />
+    <img src="https://img.shields.io/badge/Architecture-Concurrent-success.svg" alt="Concurrent Architecture" />
+    <img src="https://img.shields.io/badge/Version-v1.2-brightgreen.svg" alt="Version 1.2" />
+  </p>
+</div>
 
-A high-performance **Multi-Threaded Deep Packet Inspection (DPI) Engine** built in **Java 21** for network traffic analysis, application identification, traffic filtering, and PCAP processing.
+DPI Engine is a high-performance, multi-threaded Deep Packet Inspection (DPI) system built in Java 21. Designed for rigorous network traffic analysis, it provides deterministic application identification, granular rule-based traffic filtering, robust connection tracking, and comprehensive offline analytics export. 
 
-The engine analyzes packet captures (PCAP files), reconstructs network flows, extracts application metadata, identifies traffic patterns, and applies configurable filtering rules in real time.
+Engineered with zero external dependencies, the platform leverages advanced concurrent data structures and producer-consumer paradigms to parse and analyze PCAP files at scale through a concurrent processing pipeline.
 
----
-
-# Why DPI Engine?
-
-Traditional packet filters only inspect packet headers.
-
-DPI Engine goes further by inspecting packet payloads and protocol metadata to determine:
-
-* Which applications generated the traffic
-* Which domains were accessed
-* Which connections belong to the same flow
-* Which traffic should be blocked based on custom rules
-
-This enables:
-
-* Network Traffic Analysis
-* Security Research
-* Protocol Inspection
-* Application Classification
-* Rule-Based Traffic Filtering
-* Educational Networking Experiments
-
----
-
-# Key Features
-
-## Packet Processing
-
-* PCAP File Processing
-* Ethernet Parsing
-* IPv4 Parsing
-* TCP Parsing
-* UDP Parsing
-
-## Traffic Identification
-
-* TLS SNI Extraction
-* DNS Query Extraction
-* HTTP Host Header Extraction
-* Application Detection
-
-Supported applications include:
-
-* YouTube
-* GitHub
-* Google
-* Discord
-* Netflix
-* Facebook
-* Telegram
-* Spotify
-* TikTok
-
-## Connection Tracking
-
-Stateful flow tracking using:
-
-* Source IP
-* Destination IP
-* Source Port
-* Destination Port
-* Protocol
-
-(Five-Tuple Flow Identification)
-
-## Dynamic Rule Engine
-
-External rule configuration without recompilation.
-
-Supports:
-
-* Domain Blocking
-* Application Blocking
-* IP Blocking
-* Port Blocking
-
-Example:
-
-```text
-BLOCK_DOMAIN=facebook.com
-BLOCK_APP=YouTube
-BLOCK_IP=8.8.8.8
-BLOCK_PORT=443
+```mermaid
+flowchart LR
+    A[PCAP File] --> B[DPI Engine]
+    B --> C[Application Identification]
+    B --> D[Rule Engine]
+    B --> E[Analytics Export]
+    C --> F[(Reports)]
+    D --> F
+    E --> F
 ```
 
-## Multi-Threaded Processing
+### Project Metrics
 
-Producer-consumer architecture using:
-
-* Load Balancer Threads
-* Fast Path Processor Threads
-* LinkedBlockingQueue
-* Thread-safe Rule Management
-
-Benefits:
-
-* Higher Throughput
-* Better CPU Utilization
-* Scalable Packet Processing
-
-## Analytics & Reporting
-
-* Traffic Statistics
-* Application Statistics
-* Domain Statistics
-* Connection Statistics
-* Rule Statistics
+| Metric                 | Value |
+| ---------------------- | ----- |
+| Java Version           | 21    |
+| Source Files           | 28    |
+| Implemented Releases   | 3     |
+| Supported Applications | 16    |
+| Report Types           | 9     |
+| Rule Types             | 4     |
 
 ---
 
-# System Architecture
+## Table of Contents
+- [Overview](#overview)
+- [Motivation](#motivation)
+- [Capabilities](#capabilities)
+- [System Overview](#system-overview)
+  - [Core Architecture](#core-architecture)
+  - [Packet Processing Pipeline](#packet-processing-pipeline)
+  - [Rule Engine](#rule-engine)
+  - [Analytics Export](#analytics-export)
+- [Getting Started](#getting-started)
+  - [Build Instructions](#build-instructions)
+  - [Usage](#usage)
+  - [Execution Example](#execution-example)
+- [Configuration and Outputs](#configuration-and-outputs)
+  - [Rule Configurations](#rule-configurations)
+  - [Analytics Reports](#analytics-reports)
+- [Technical Details](#technical-details)
+  - [Performance Characteristics](#performance-characteristics)
+  - [Design Decisions](#design-decisions)
+  - [Codebase Organization](#codebase-organization)
+- [Project Evolution](#project-evolution)
+  - [Roadmap](#roadmap)
+  - [Learning Outcomes](#learning-outcomes)
+- [License](#license)
 
-```text
-                    +------------------+
-                    |    PCAP Reader   |
-                    +------------------+
-                              |
-                              v
-                    +------------------+
-                    |  Load Balancers  |
-                    +------------------+
-                              |
-          +-------------------+-------------------+
-          |                                       |
-          v                                       v
- +------------------+                 +------------------+
- | Fast Path Proc 1 |                 | Fast Path Proc N |
- +------------------+                 +------------------+
-          |                                       |
-          +-------------------+-------------------+
-                              |
-            +-----------------+-----------------+
-            |                                   |
-            v                                   v
- +---------------------+          +---------------------+
- | Connection Tracking |          |    Rule Engine      |
- +---------------------+          +---------------------+
-            |                                   |
-            +-----------------+-----------------+
-                              |
-                              v
-                    +------------------+
-                    |    PCAP Writer   |
-                    +------------------+
-                              |
-                              v
-                    +------------------+
-                    | Traffic Reports  |
-                    +------------------+
+---
+
+## Overview
+
+The DPI Engine processes raw network captures to extract metadata traversing the Ethernet, IPv4, TCP, and UDP layers. Moving up the stack, it identifies Layer 7 protocols by parsing HTTP Host headers, DNS queries, and TLS Client Hello SNI (Server Name Indication) extensions.
+
+Once classified, traffic is evaluated against a dynamic rule engine capable of dropping packets based on IP, Port, Subdomain, or Application identifiers. Upon engine termination, a snapshot export model dumps perfectly preserved lifetime statistics to disk via CSV and JSON formats.
+
+## Motivation
+
+This project was built to demonstrate advanced Java systems engineering capabilities, specifically:
+- High-performance, low-contention architecture.
+- Custom binary protocol parsing utilizing native standard libraries.
+- Architectural design patterns suitable for large-scale network sensors.
+- State management and memory safety in environments prone to combinatorial explosion (e.g., DNS exhaustion).
+
+## Capabilities
+
+### Protocol & Application Support
+* **Layers 2-4**: Ethernet, IPv4, TCP, UDP parsing.
+* **Layer 7 Extraction**: TLS SNI, DNS Queries, HTTP Host Headers.
+* **Application Identification**: Native mapping for 16 major platforms including YouTube, GitHub, Discord, Netflix, Facebook, Instagram, Telegram, Spotify, Google, Microsoft, Zoom, Apple, Amazon, TikTok, Cloudflare, and Twitter/X.
+
+### Filtering & Analytics
+* **Dynamic Rule Engine**: Real-time traffic dropping based on user-defined configurations.
+* **Domain Exhaustion Protection**: Implements a strict 50,000 domain memory cap, safeguarding the JVM heap against randomized SNI floods or malware DGAs.
+* **Lifetime Analytics**: Captures 100% of packet and byte counts through thread-local analytics accumulators even after stale flows are evicted from active tracking tables.
+
+---
+
+## System Overview
+
+### Core Architecture
+
+The DPI Engine utilizes a robust producer-consumer architecture. A primary reader thread dispatches raw packets to Load Balancer threads, which subsequently hash traffic into multiple Fast Path (FP) worker queues to ensure flows are strictly serialized per worker.
+
+```mermaid
+flowchart TD
+    R[PCAP Reader] --> LB1[Load Balancer 1]
+    R --> LB2[Load Balancer 2]
+    
+    LB1 --> FP1[FastPath Worker 0]
+    LB1 --> FP2[FastPath Worker 1]
+    
+    LB2 --> FP3[FastPath Worker 2]
+    LB2 --> FP4[FastPath Worker 3]
+    
+    FP1 --> CT1[(Connection Tracking)]
+    FP2 --> CT1
+    FP3 --> CT2[(Connection Tracking)]
+    FP4 --> CT2
+    
+    CT1 --> RE[Rule Engine]
+    CT2 --> RE
+    
+    RE --> AE[Analytics Export]
+    AE --> REP[(Reports Directory)]
 ```
 
----
+### Packet Processing Pipeline
 
-# Packet Processing Pipeline
+The Fast Path workers execute a strict processing pipeline for every packet, progressing from low-level byte manipulation to Layer 7 metadata extraction.
 
-```text
-Raw Packet
-    |
-    v
-Ethernet Parser
-    |
-    v
-IPv4 Parser
-    |
-    v
-TCP / UDP Parser
-    |
-    v
-Protocol Inspection
-    |
-    +---- TLS SNI Extraction
-    |
-    +---- DNS Extraction
-    |
-    +---- HTTP Host Extraction
-    |
-    v
-Application Identification
-    |
-    v
-Rule Evaluation
-    |
-    v
-Forward / Block
+```mermaid
+flowchart TD
+    A[Raw Packet Bytes] --> B[Packet Parser]
+    B --> D[Protocol Inspection]
+    
+    D -- TLS --> F[SNI Extraction]
+    D -- DNS --> G[DNS Extraction]
+    D -- HTTP --> H[HTTP Host Extraction]
+    
+    F --> I[Application Classification]
+    G --> I
+    H --> I
+    
+    I --> J[Connection Tracking]
+```
+
+### Rule Engine
+
+The Rule Engine (v1.1) supports strict and wildcard-aware blocking mechanisms.
+
+```mermaid
+flowchart TD
+    P[Packet Flow] --> M[Metadata Extraction]
+    M --> R{Rule Evaluation}
+    
+    R -- Matches Rule --> D[Drop Packet / Block Flow]
+    R -- Clean --> A[Allow Packet / Forward]
+    
+    D --> S[(Rule Statistics Update)]
+```
+
+### Analytics Export
+
+To maintain a low-contention architecture on the fast-path threads, the Analytics Export subsystem (v1.2) utilizes thread-local accumulators. Evicted flows securely dump their terminal state into localized maps, which are merged universally at engine shutdown.
+
+```mermaid
+flowchart TD
+    A[Active Connections] --> C[Analytics Collector]
+    B[Evicted Connections\nThread-Local Accumulators] --> C
+    
+    C --> M[Analytics Manager]
+    
+    M --> CSV[CSV Exporter]
+    M --> JSON[JSON Exporter]
+    
+    CSV --> R[(Reports Directory)]
+    JSON --> R
 ```
 
 ---
 
-# Dynamic Rule Engine (v1.1)
+## Getting Started
 
-The Dynamic Rule Engine allows traffic filtering through an external rules file.
+### Build Instructions
 
-## Supported Rules
-
-### Domain Rules
-
-```text
-BLOCK_DOMAIN=facebook.com
-BLOCK_DOMAIN=instagram.com
-```
-
-Matches:
-
-```text
-www.facebook.com
-m.facebook.com
-api.facebook.com
-```
-
-### Application Rules
-
-```text
-BLOCK_APP=YouTube
-BLOCK_APP=TikTok
-```
-
-### IP Rules
-
-```text
-BLOCK_IP=8.8.8.8
-```
-
-### Port Rules
-
-```text
-BLOCK_PORT=443
-```
-
----
-
-# Example Rules File
-
-```text
-# Social Media
-BLOCK_DOMAIN=facebook.com
-BLOCK_DOMAIN=instagram.com
-
-# Video Streaming
-BLOCK_APP=YouTube
-BLOCK_APP=TikTok
-
-# DNS Servers
-BLOCK_IP=8.8.8.8
-
-# HTTPS
-BLOCK_PORT=443
-```
-
----
-
-# Project Structure
-
-```text
-src/main/java/com/packetanalyzer
-│
-├── engine
-│   ├── DpiEngine.java
-│   ├── LoadBalancer.java
-│   └── FastPathProcessor.java
-│
-├── parser
-│   └── PacketParser.java
-│
-├── extractors
-│   ├── SniExtractor.java
-│   ├── DnsExtractor.java
-│   └── HttpHostExtractor.java
-│
-├── io
-│   ├── PcapReader.java
-│   ├── PcapWriter.java
-│   └── ByteUtils.java
-│
-├── rules
-│   ├── RuleManager.java
-│   └── RuleFileParser.java
-│
-├── tracking
-│   ├── ConnectionTracker.java
-│   └── GlobalConnectionTable.java
-│
-└── types
-    ├── FiveTuple.java
-    ├── ParsedPacket.java
-    ├── Connection.java
-    ├── PacketJob.java
-    └── DPIStats.java
-```
-
----
-
-# Build
-
-## Prerequisites
-
-* Java 21
-* Maven 3.9+
-
-## Compile
+This project requires **Java 21** and **Maven**.
 
 ```bash
+# Clone the repository
+git clone https://github.com/NamanKejriwal/DPI-Engine
+cd dpi-engine
+
+# Build the project
 mvn clean package
 ```
 
----
+The resulting artifact will be located at `target/dpi-engine-1.0-SNAPSHOT.jar`.
 
-# Usage
+### Usage
 
-## Basic Execution
-
-```bash
-java -jar target/dpi-engine-1.0-SNAPSHOT.jar input.pcap output.pcap
-```
-
-## Rule Engine Execution
+To execute the DPI Engine against a PCAP file, pass the input and output paths as positional arguments:
 
 ```bash
-java -jar target/dpi-engine-1.0-SNAPSHOT.jar \
-input.pcap \
-output.pcap \
--r rules.txt \
--v
+java -jar target/dpi-engine-1.0-SNAPSHOT.jar trace.pcap filtered.pcap --rules blocklist.txt --verbose
 ```
 
----
-
-# Example Output
+### Execution Example
 
 ```text
-==================================================
-RULE ENGINE
-==================================================
+[DPIEngine] Processing: trace.pcap
+[DPIEngine] Output to:  filtered.pcap
 
-Loaded Rules:
-Domains: 2
-IPs: 1
-Ports: 1
-Applications: 2
+[DPIEngine] All threads started
+[Reader] Starting packet processing...
+[Reader] Finished reading 77 packets
+[DPIEngine] All threads stopped
 
-==================================================
-```
+╔══════════════════════════════════════════════════════════════╗
+║                    DPI ENGINE STATISTICS                      ║
+╠══════════════════════════════════════════════════════════════╣
+║ PACKET STATISTICS                                             ║
+║   Total Packets:                77                        ║
+║   Total Bytes:               11334                        ║
+║   TCP Packets:                  73                        ║
+║   UDP Packets:                   4                        ║
+...
 
-```text
-[BLOCKED]
-
-Flow:
-192.168.1.100:64044
--> www.facebook.com
-
-Rule:
-BLOCK_DOMAIN=facebook.com
-```
-
-```text
 ==================================================
 RULE STATISTICS
 ==================================================
+Blocked By Domain: 0
+Blocked By IP: 0
+Blocked By Port: 0
+Blocked By Application: 0
 
-Blocked By Domain: 12
-Blocked By IP: 4
-Blocked By Port: 20
-Blocked By Application: 17
-
-Total Blocked Flows: 53
+Total Blocked Flows: 0
 
 ==================================================
+
+[AnalyticsManager] Reports successfully exported to reports/
+
+Processing completed successfully in 0.88 seconds.
 ```
 
 ---
 
-# Technologies Used
+## Configuration and Outputs
 
-* Java 21
-* Maven
-* Concurrent Collections
-* LinkedBlockingQueue
-* ReentrantReadWriteLock
-* AtomicLong
-* PCAP Parsing
-* Multi-threading
+### Rule Configurations
 
----
+The engine supports dynamic rules provided via an external text file. Subdomain-aware domain matching correctly drops traffic destined for `www.facebook.com` when `BLOCK_DOMAIN=facebook.com` is configured.
 
-# Performance Characteristics
+**Example `blocklist.txt`**:
+```ini
+BLOCK_DOMAIN=facebook.com
+BLOCK_APP=YouTube
+BLOCK_IP=8.8.8.8
+BLOCK_PORT=443
+```
 
-Current implementation supports:
+### Analytics Reports
 
-* Multi-threaded Packet Processing
-* Concurrent Flow Tracking
-* Lock-protected Rule Management
-* High-throughput Traffic Analysis
-* Stateful Connection Tracking
+The Analytics Export subsystem automatically writes the following files to the output directory upon execution:
 
----
+```text
+reports/
+├── summary.json
+├── applications.csv
+├── domains.csv
+├── connections.csv
+├── rules.csv
+├── top-talkers.csv
+├── application-distribution.json
+├── domain-distribution.json
+└── report-metadata.json
+```
 
-# Roadmap
+* **`summary.json`**: High-level statistical overview of the run, providing total packet and connection throughput metrics.
+* **`applications.csv`**: Detailed traffic usage mapping total bytes and packets directly to identified applications (e.g., YouTube, Google).
+* **`domains.csv`**: Aggregation of the most frequently requested SNI and DNS hostnames across the PCAP lifecycle.
+* **`connections.csv`**: Raw snapshot dump of all currently active 5-tuple flows at the exact moment of engine termination.
+* **`rules.csv`**: Efficacy summary of the Dynamic Rule Engine containing total counts of flows blocked by each rule type.
+* **`top-talkers.csv`**: Source IP address activity index ranked by total connection establishment counts.
+* **`application-distribution.json`**: Pre-calculated percentage distributions for application traffic, ready for dashboard consumption.
+* **`domain-distribution.json`**: Pre-calculated percentage distributions for domain activity.
+* **`report-metadata.json`**: Provenance details containing engine versions, execution timestamps, and benchmarked processing times.
 
-## ✅ v1.0 – Core DPI Engine
+#### Report Examples
 
-* PCAP Processing
-* TCP/UDP Parsing
-* SNI Extraction
-* Connection Tracking
-* Multi-threaded Pipeline
+**`summary.json`**
+```json
+{
+  "totalPackets": 77,
+  "tcpPackets": 73,
+  "udpPackets": 4,
+  "connections": 43,
+  "blockedFlows": 0,
+  "runtimeMs": 880
+}
+```
 
-## ✅ v1.1 – Dynamic Rule Engine
+**`applications.csv`**
+```csv
+Application,Connections,Packets,Bytes,Percentage
+Unknown,21,21,1134,48.84
+DNS,4,4,300,9.30
+YouTube,1,3,247,2.33
+Google,1,3,246,2.33
+```
 
-* External Rule Configuration
-* Domain Filtering
-* IP Filtering
-* Port Filtering
-* Application Filtering
-* Verbose Blocking Logs
-* Rule Statistics
-* Subdomain-aware Domain Matching
+**`domains.csv`**
+```csv
+Domain,Connections,Percentage
+www.facebook.com,2,9.09
+www.google.com,2,9.09
+```
 
-## 🚧 v1.2 – Analytics Export
-
-Planned:
-
-* CSV Reports
-* JSON Reports
-* Application Usage Analytics
-* Domain Analytics Export
-
-## 🚧 v1.3 – Performance Dashboard
-
-Planned:
-
-* Throughput Metrics
-* Memory Usage Tracking
-* Processing Statistics
-* Runtime Monitoring
-
----
-
-# Learning Outcomes
-
-This project demonstrates practical experience with:
-
-* Computer Networks
-* Protocol Analysis
-* TCP/IP Internals
-* Deep Packet Inspection
-* Concurrent Programming
-* Producer-Consumer Architecture
-* Thread Synchronization
-* System Design
-* Performance Engineering
-* Java Backend Development
+**`top-talkers.csv`**
+```csv
+IP,ConnectionCount
+192.168.1.100,22
+192.168.1.50,5
+```
 
 ---
 
-# License
+## Technical Details
 
-This project is intended for educational, research, and networking experimentation purposes.
+### Performance Characteristics
+
+* **Zero External Dependencies**: Ensures tightly controlled memory allocations and strict compliance with core JVM paradigms.
+* **Multi-Threaded Packet Processing**: Packet processing pipelines rely exclusively on single-writer, single-reader concurrent queues. No highly contented synchronized blocks impede the packet parsing loop.
+* **OOM-Safe Tracking**: Aggressive connection eviction limits active heap footprints. The Thread-Local analytics accumulators are strictly capped (50,000 domains) to mitigate algorithmic complexity attacks.
+* **Asynchronous Reporting**: Analytics generation executes sequentially after processing loops terminate, completely eliminating I/O bottlenecks from the fast path.
+
+### Design Decisions
+
+| Component | Design Decision | Rationale |
+| :--- | :--- | :--- |
+| **Parsing Layer** | Custom Byte Extractors | Native byte manipulation provides highly predictable allocation patterns over heavy abstractions. |
+| **Concurrency** | Producer-Consumer | Allows horizontal scaling of FastPath threads based on CPU core availability. |
+| **Analytics** | Snapshot + Accumulators | Retaining raw connection objects causes memory exhaustion. Rolling metrics into cumulative thread-local maps maintains data integrity with minimal overhead. |
+
+### Codebase Organization
+
+```text
+com.packetanalyzer
+├── analytics    # Report generation, CSV/JSON serialization, Collectors
+├── engine       # DpiEngine orchestrator, FastPath, LoadBalancers
+├── extractors   # Layer 7 payload parsers (SNI, HTTP, DNS)
+├── io           # PCAP Reader/Writer, Byte manipulation utilities
+├── parser       # L2-L4 Packet Parser implementation
+├── rules        # Dynamic Rule Engine, Rule parsers, Subdomain matching
+├── tracking     # Connection lifecycle, Thread-local accumulators
+└── types        # DTOs, Enums, FiveTuples, PacketJobs, AppTypes
+```
+
+---
+
+## Project Evolution
+
+### Roadmap
+
+```mermaid
+timeline
+    title DPI Engine Evolution
+    section v1.0 Core Engine
+        Packet Processing : L2-L4 Parsing
+        App Detection : SNI, DNS, HTTP Extractors
+        State : Connection Tracking
+    section v1.1 Rule Engine
+        Dynamic Rules : File-based configurations
+        Filtering : IP, Port, Domain, App dropping
+    section v1.2 Analytics Export
+        Reporting : CSV and JSON Exporters
+        Metrics : Lifetime Flow Accumulators
+    section v1.3 Future
+        Dashboards : Performance Monitoring
+        Metrics : Throughput & Memory Tracking
+```
+
+**Status Summary:**
+* ✅ **v1.0** Core DPI Engine
+* ✅ **v1.1** Dynamic Rule Engine
+* ✅ **v1.2** Analytics Export
+* 🚧 **v1.3** Performance Dashboard (Planned)
+
+### Learning Outcomes
+
+This project demonstrates proficiency in:
+* Advanced Java concurrency (`LinkedBlockingQueue`, `AtomicLong`, `ReentrantReadWriteLock`).
+* Network stack internals (binary protocol anatomy, byte-order conversions).
+* Application architecture (Dependency decoupling, SOLID principles, scalable subsystems).
+* Memory management strategies (Eviction policies, object pooling theories, accumulator patterns).
+
+---
