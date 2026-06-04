@@ -21,6 +21,10 @@ public class ConnectionTracker {
     private long totalSeen = 0;
     private long classifiedCount = 0;
     private long blockedCount = 0;
+    private long evictedCount = 0;
+
+    private long currentPcapTsSec = 0;
+    private long lastCleanupTsSec = 0;
 
     // Cumulative Accumulators for Analytics
     public static class AppStats {
@@ -41,6 +45,7 @@ public class ConnectionTracker {
         public long totalConnectionsSeen;
         public long classifiedConnections;
         public long blockedConnections;
+        public long evictedConnections;
     }
 
     public ConnectionTracker(int fpId, int maxConnections) {
@@ -48,7 +53,7 @@ public class ConnectionTracker {
         this.maxConnections = maxConnections;
     }
 
-    public Connection getOrCreateConnection(FiveTuple tuple) {
+    public Connection getOrCreateConnection(FiveTuple tuple, long tsSec) {
         Connection conn = connections.get(tuple);
         if (conn != null) {
             return conn;
@@ -60,6 +65,8 @@ public class ConnectionTracker {
 
         conn = new Connection();
         conn.tuple = tuple;
+        conn.firstSeenSec = tsSec;
+        conn.lastSeenSec = tsSec;
         
         connections.put(tuple, conn);
         totalSeen++;
@@ -76,10 +83,11 @@ public class ConnectionTracker {
         return connections.get(tuple.reverse());
     }
 
-    public void updateConnection(Connection conn, int packetSize, boolean isOutbound) {
+    public void updateConnection(Connection conn, int packetSize, boolean isOutbound, long tsSec) {
         if (conn == null) return;
         
-        conn.lastSeen = System.nanoTime();
+        conn.lastSeenSec = tsSec;
+        currentPcapTsSec = Math.max(currentPcapTsSec, tsSec);
         
         if (isOutbound) {
             conn.packetsOut++;
@@ -138,8 +146,7 @@ public class ConnectionTracker {
         cumulativeTopTalkers.put(conn.tuple.srcIp, cumulativeTopTalkers.getOrDefault(conn.tuple.srcIp, 0L) + 1);
     }
 
-    public int cleanupStale(long timeoutNanos) {
-        long now = System.nanoTime();
+    public int cleanupStale(long currentTsSec, long flowTimeoutSec) {
         int removed = 0;
         
         var it = connections.entrySet().iterator();
@@ -147,10 +154,11 @@ public class ConnectionTracker {
             Map.Entry<FiveTuple, Connection> entry = it.next();
             Connection conn = entry.getValue();
             
-            if ((now - conn.lastSeen) > timeoutNanos || conn.state == ConnectionState.CLOSED) {
+            if ((currentTsSec - conn.lastSeenSec) > flowTimeoutSec || conn.state == ConnectionState.CLOSED) {
                 recordEvictedConnection(conn);
                 it.remove();
                 removed++;
+                evictedCount++;
             }
         }
         
@@ -171,6 +179,7 @@ public class ConnectionTracker {
         stats.totalConnectionsSeen = totalSeen;
         stats.classifiedConnections = classifiedCount;
         stats.blockedConnections = blockedCount;
+        stats.evictedConnections = evictedCount;
         return stats;
     }
 
@@ -195,8 +204,8 @@ public class ConnectionTracker {
         Connection oldestConn = null;
         
         for (Map.Entry<FiveTuple, Connection> entry : connections.entrySet()) {
-            if (entry.getValue().lastSeen < oldestTime) {
-                oldestTime = entry.getValue().lastSeen;
+            if (entry.getValue().lastSeenSec < oldestTime) {
+                oldestTime = entry.getValue().lastSeenSec;
                 oldestKey = entry.getKey();
                 oldestConn = entry.getValue();
             }
@@ -205,6 +214,7 @@ public class ConnectionTracker {
         if (oldestKey != null) {
             recordEvictedConnection(oldestConn);
             connections.remove(oldestKey);
+            evictedCount++;
         }
     }
 
@@ -218,5 +228,17 @@ public class ConnectionTracker {
 
     public Map<Integer, Long> getCumulativeTopTalkers() {
         return cumulativeTopTalkers;
+    }
+
+    public long getCurrentPcapTsSec() {
+        return currentPcapTsSec;
+    }
+
+    public long getLastCleanupTsSec() {
+        return lastCleanupTsSec;
+    }
+
+    public void setLastCleanupTsSec(long tsSec) {
+        this.lastCleanupTsSec = tsSec;
     }
 }

@@ -8,7 +8,7 @@ import java.io.IOException;
 
 public class AnalyticsManager {
     
-    public static void exportAll(DPIStats stats, GlobalConnectionTable globalConnTable, String inputFile, long runtimeMs) {
+    public static void exportAll(DPIStats stats, GlobalConnectionTable globalConnTable, String inputFile, long runtimeMs, long flowTimeoutSec) {
         String outputDir = "reports";
         File dir = new File(outputDir);
         if (!dir.exists()) {
@@ -21,7 +21,7 @@ public class AnalyticsManager {
             
             long totalConnections = collector.getAppStats().values().stream().mapToLong(s -> s.connections).sum();
             
-            JsonExporter.exportSummary(outputDir, stats, totalConnections, runtimeMs);
+            JsonExporter.exportSummary(outputDir, stats, totalConnections, runtimeMs, collector.getActiveFlows(), collector.getEvictedFlows(), flowTimeoutSec);
             JsonExporter.exportMetadata(outputDir, inputFile, runtimeMs);
             JsonExporter.exportAppDistribution(outputDir, collector.getAppStats());
             JsonExporter.exportDomainDistribution(outputDir, collector.getDomainStats());

@@ -13,7 +13,7 @@ import java.util.Locale;
 
 public class JsonExporter {
 
-    public static void exportSummary(String outputDir, DPIStats stats, long totalConnections, long runtimeMs) throws IOException {
+    public static void exportSummary(String outputDir, DPIStats stats, long totalConnections, long runtimeMs, long activeFlows, long evictedFlows, long flowTimeoutSec) throws IOException {
         long blockedFlows = stats.blockedByDomain.get() + stats.blockedByIp.get() + stats.blockedByPort.get() + stats.blockedByApp.get();
         
         StringBuilder sb = new StringBuilder();
@@ -22,7 +22,10 @@ public class JsonExporter {
         sb.append("  \"tcpPackets\": ").append(stats.tcpPackets.get()).append(",\n");
         sb.append("  \"udpPackets\": ").append(stats.udpPackets.get()).append(",\n");
         sb.append("  \"connections\": ").append(totalConnections).append(",\n");
+        sb.append("  \"activeFlows\": ").append(activeFlows).append(",\n");
+        sb.append("  \"evictedFlows\": ").append(evictedFlows).append(",\n");
         sb.append("  \"blockedFlows\": ").append(blockedFlows).append(",\n");
+        sb.append("  \"flowTimeoutSec\": ").append(flowTimeoutSec).append(",\n");
         sb.append("  \"runtimeMs\": ").append(runtimeMs).append("\n");
         sb.append("}\n");
         

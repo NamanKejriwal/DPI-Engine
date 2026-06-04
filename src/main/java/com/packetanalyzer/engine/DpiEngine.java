@@ -29,6 +29,8 @@ public class DpiEngine {
         public int queueSize = 10000;
         public String rulesFile = "";
         public boolean verbose = false;
+        public long flowTimeoutSec = 300;
+        public long cleanupWindowSec = 10;
     }
 
     private final Config config;
@@ -49,13 +51,13 @@ public class DpiEngine {
         this.config = config;
 
         System.out.println("\n╔══════════════════════════════════════════════════════════════╗");
-        System.out.println("║                    DPI ENGINE v1.0                            ║");
-        System.out.println("║               Deep Packet Inspection System                   ║");
+        System.out.println("║                    DPI ENGINE v1.3                           ║");
+        System.out.println("║               Deep Packet Inspection System                  ║");
         System.out.println("╠══════════════════════════════════════════════════════════════╣");
-        System.out.println(String.format("║ Configuration:                                                ║"));
-        System.out.println(String.format("║   Load Balancers:    %3d                                       ║", config.numLoadBalancers));
-        System.out.println(String.format("║   FPs per LB:        %3d                                       ║", config.fpsPerLb));
-        System.out.println(String.format("║   Total FP threads:  %3d                                       ║", config.numLoadBalancers * config.fpsPerLb));
+        System.out.println("║ CONFIGURATION                                                ║");
+        System.out.println(String.format("║   Load Balancers:                %15d             ║", config.numLoadBalancers));
+        System.out.println(String.format("║   FPs per LB:                    %15d             ║", config.fpsPerLb));
+        System.out.println(String.format("║   Total FP threads:              %15d             ║", config.numLoadBalancers * config.fpsPerLb));
         System.out.println("╚══════════════════════════════════════════════════════════════╝");
     }
 
@@ -65,17 +67,16 @@ public class DpiEngine {
             ruleManager.loadRules(config.rulesFile);
             
             RuleManager.RuleStats rstats = ruleManager.getStats();
-            System.out.println("\n==================================================");
-            System.out.println("RULE ENGINE");
-            System.out.println("===========\n");
-            System.out.println("Rules File:");
-            System.out.println(config.rulesFile + "\n");
-            System.out.println("Loaded Rules:");
-            System.out.println("Domains: " + rstats.blockedDomains);
-            System.out.println("IPs: " + rstats.blockedIps);
-            System.out.println("Ports: " + rstats.blockedPorts);
-            System.out.println("Applications: " + rstats.blockedApps);
-            System.out.println("\n==================================================");
+            System.out.println("\n╔══════════════════════════════════════════════════════════════╗");
+            System.out.println("║ RULE ENGINE INITIALIZATION                                   ║");
+            System.out.println("╠══════════════════════════════════════════════════════════════╣");
+            String rulesStr = config.rulesFile.length() > 41 ? config.rulesFile.substring(0, 38) + "..." : config.rulesFile;
+            System.out.println("║ Loaded from: " + String.format("%-47s", rulesStr) + " ║");
+            System.out.println(String.format("║   Domains:                       %15d             ║", rstats.blockedDomains));
+            System.out.println(String.format("║   IPs:                           %15d             ║", rstats.blockedIps));
+            System.out.println(String.format("║   Ports:                         %15d             ║", rstats.blockedPorts));
+            System.out.println(String.format("║   Applications:                  %15d             ║", rstats.blockedApps));
+            System.out.println("╚══════════════════════════════════════════════════════════════╝");
         }
 
         int totalFps = config.numLoadBalancers * config.fpsPerLb;
@@ -86,7 +87,10 @@ public class DpiEngine {
         List<LinkedBlockingQueue<PacketJob>> allFpQueues = new ArrayList<>();
 
         for (int i = 0; i < totalFps; i++) {
-            FastPathProcessor fp = new FastPathProcessor(i, ruleManager, stats, config.verbose, outputCb);
+            FastPathProcessor fp = new FastPathProcessor(
+                i, ruleManager, stats, config.verbose, 
+                config.flowTimeoutSec, config.cleanupWindowSec, outputCb
+            );
             fastPathProcessors.add(fp);
             allFpQueues.add(fp.getInputQueue());
             globalConnTable.registerTracker(i, fp.getConnectionTracker());
@@ -186,7 +190,7 @@ public class DpiEngine {
         System.out.print(globalConnTable.generateReport());
 
         long runtimeMs = System.currentTimeMillis() - startTime;
-        AnalyticsManager.exportAll(stats, globalConnTable, inputFile, runtimeMs);
+        AnalyticsManager.exportAll(stats, globalConnTable, inputFile, runtimeMs, config.flowTimeoutSec);
 
         return true;
     }
@@ -330,25 +334,14 @@ public class DpiEngine {
         StringBuilder ss = new StringBuilder();
         
         ss.append("\n╔══════════════════════════════════════════════════════════════╗\n");
-        ss.append("║                    DPI ENGINE STATISTICS                      ║\n");
+        ss.append("║                    DPI ENGINE STATISTICS                     ║\n");
         ss.append("╠══════════════════════════════════════════════════════════════╣\n");
         
-        ss.append("║ PACKET STATISTICS                                             ║\n");
-        ss.append(String.format("║   Total Packets:      %12d                        ║\n", stats.totalPackets.get()));
-        ss.append(String.format("║   Total Bytes:        %12d                        ║\n", stats.totalBytes.get()));
-        ss.append(String.format("║   TCP Packets:        %12d                        ║\n", stats.tcpPackets.get()));
-        ss.append(String.format("║   UDP Packets:        %12d                        ║\n", stats.udpPackets.get()));
-        
-        ss.append("╠══════════════════════════════════════════════════════════════╣\n");
-        ss.append("║ FILTERING STATISTICS                                          ║\n");
-        ss.append(String.format("║   Forwarded:          %12d                        ║\n", stats.forwardedPackets.get()));
-        ss.append(String.format("║   Dropped/Blocked:    %12d                        ║\n", stats.droppedPackets.get()));
-        
-        long total = stats.totalPackets.get();
-        if (total > 0) {
-            double dropRate = 100.0 * stats.droppedPackets.get() / total;
-            ss.append(String.format("║   Drop Rate:          %11.2f%%                        ║\n", dropRate));
-        }
+        ss.append("║ PACKET STATISTICS                                            ║\n");
+        ss.append(String.format("║   Total Packets:                 %15d             ║\n", stats.totalPackets.get()));
+        ss.append(String.format("║   Total Bytes:                   %15d             ║\n", stats.totalBytes.get()));
+        ss.append(String.format("║   TCP Packets:                   %15d             ║\n", stats.tcpPackets.get()));
+        ss.append(String.format("║   UDP Packets:                   %15d             ║\n", stats.udpPackets.get()));
         
         long lbReceived = 0, lbDispatched = 0;
         for (LoadBalancer lb : loadBalancers) {
@@ -357,50 +350,61 @@ public class DpiEngine {
             lbDispatched += lstats.packetsDispatched;
         }
         
-        ss.append("╠══════════════════════════════════════════════════════════════╣\n");
-        ss.append("║ LOAD BALANCER STATISTICS                                      ║\n");
-        ss.append(String.format("║   LB Received:        %12d                        ║\n", lbReceived));
-        ss.append(String.format("║   LB Dispatched:      %12d                        ║\n", lbDispatched));
-        
-        long fpProcessed = 0, fpForwarded = 0, fpDropped = 0, connectionsTracked = 0;
+        long fpProcessed = 0, fpForwarded = 0, fpDropped = 0, activeConnections = 0, evictedConnections = 0;
         for (FastPathProcessor fp : fastPathProcessors) {
             FastPathProcessor.FPStats fstats = fp.getStats();
             fpProcessed += fstats.packetsProcessed;
             fpForwarded += fstats.packetsForwarded;
             fpDropped += fstats.packetsDropped;
-            connectionsTracked += fstats.connectionsTracked;
+            activeConnections += fstats.connectionsTracked;
+            evictedConnections += fstats.evictedConnections;
+        }
+
+        ss.append("╠══════════════════════════════════════════════════════════════╣\n");
+        ss.append("║ PIPELINE STATISTICS                                          ║\n");
+        ss.append(String.format("║   LB Received:                   %15d             ║\n", lbReceived));
+        ss.append(String.format("║   LB Dispatched:                 %15d             ║\n", lbDispatched));
+        ss.append(String.format("║   FP Processed:                  %15d             ║\n", fpProcessed));
+        ss.append(String.format("║   FP Forwarded:                  %15d             ║\n", fpForwarded));
+        ss.append(String.format("║   FP Dropped:                    %15d             ║\n", fpDropped));
+        
+        ss.append("╠══════════════════════════════════════════════════════════════╣\n");
+        ss.append("║ FILTERING STATISTICS                                         ║\n");
+        ss.append(String.format("║   Forwarded:                     %15d             ║\n", stats.forwardedPackets.get()));
+        ss.append(String.format("║   Dropped/Blocked:               %15d             ║\n", stats.droppedPackets.get()));
+        
+        long total = stats.totalPackets.get();
+        if (total > 0) {
+            double dropRate = 100.0 * stats.droppedPackets.get() / total;
+            ss.append(String.format("║   Drop Rate:                     %14.2f%%             ║\n", dropRate));
         }
         
         ss.append("╠══════════════════════════════════════════════════════════════╣\n");
-        ss.append("║ FAST PATH STATISTICS                                          ║\n");
-        ss.append(String.format("║   FP Processed:       %12d                        ║\n", fpProcessed));
-        ss.append(String.format("║   FP Forwarded:       %12d                        ║\n", fpForwarded));
-        ss.append(String.format("║   FP Dropped:         %12d                        ║\n", fpDropped));
-        ss.append(String.format("║   Active Connections: %12d                        ║\n", connectionsTracked));
-        
+        ss.append("║ FLOW LIFECYCLE STATISTICS                                    ║\n");
+        ss.append(String.format("║   Active Flows:                  %15d             ║\n", activeConnections));
+        ss.append(String.format("║   Evicted Flows:                 %15d             ║\n", evictedConnections));
+        ss.append(String.format("║   Flow Timeout:                  %11d sec             ║\n", config.flowTimeoutSec));
+
         if (ruleManager != null) {
             RuleManager.RuleStats rstats = ruleManager.getStats();
+            long loadedRules = rstats.blockedDomains + rstats.blockedIps + rstats.blockedPorts + rstats.blockedApps;
+            long totalBlockedFlows = stats.blockedByDomain.get() + stats.blockedByIp.get() + stats.blockedByPort.get() + stats.blockedByApp.get();
             ss.append("╠══════════════════════════════════════════════════════════════╣\n");
-            ss.append("║ BLOCKING RULES                                                ║\n");
-            ss.append(String.format("║   Blocked IPs:        %12d                        ║\n", rstats.blockedIps));
-            ss.append(String.format("║   Blocked Apps:       %12d                        ║\n", rstats.blockedApps));
-            ss.append(String.format("║   Blocked Domains:    %12d                        ║\n", rstats.blockedDomains));
-            ss.append(String.format("║   Blocked Ports:      %12d                        ║\n", rstats.blockedPorts));
+            ss.append("║ RULE STATISTICS                                              ║\n");
+            ss.append(String.format("║   Loaded Rules:                  %15d             ║\n", loadedRules));
+            ss.append(String.format("║   Hit - By Domain:               %15d             ║\n", stats.blockedByDomain.get()));
+            ss.append(String.format("║   Hit - By IP:                   %15d             ║\n", stats.blockedByIp.get()));
+            ss.append(String.format("║   Hit - By Port:                 %15d             ║\n", stats.blockedByPort.get()));
+            ss.append(String.format("║   Hit - By App:                  %15d             ║\n", stats.blockedByApp.get()));
+            ss.append(String.format("║   Total Blocked Flows:           %15d             ║\n", totalBlockedFlows));
         }
-        
+
+        ss.append("╠══════════════════════════════════════════════════════════════╣\n");
+        ss.append("║ EXPORT STATUS                                                ║\n");
+        ss.append("║   Reports Directory:                 reports/                ║\n");
+        ss.append(String.format("║   CSV Files:                     %15d             ║\n", 5));
+        ss.append(String.format("║   JSON Files:                    %15d             ║\n", 4));
         ss.append("╚══════════════════════════════════════════════════════════════╝\n");
-        
-        ss.append("\n==================================================\n");
-        ss.append("RULE STATISTICS\n");
-        ss.append("===============\n\n");
-        ss.append("Blocked By Domain: ").append(stats.blockedByDomain.get()).append("\n");
-        ss.append("Blocked By IP: ").append(stats.blockedByIp.get()).append("\n");
-        ss.append("Blocked By Port: ").append(stats.blockedByPort.get()).append("\n");
-        ss.append("Blocked By Application: ").append(stats.blockedByApp.get()).append("\n\n");
-        
-        long totalBlockedFlows = stats.blockedByDomain.get() + stats.blockedByIp.get() + stats.blockedByPort.get() + stats.blockedByApp.get();
-        ss.append("Total Blocked Flows: ").append(totalBlockedFlows).append("\n\n");
-        ss.append("==================================================\n");
         
         return ss.toString();
     }

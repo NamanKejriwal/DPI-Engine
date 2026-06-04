@@ -11,8 +11,8 @@ public class Connection {
     public long bytesIn;
     public long bytesOut;
     
-    public long firstSeen;
-    public long lastSeen;
+    public long firstSeenSec;
+    public long lastSeenSec;
     
     public PacketAction action = PacketAction.FORWARD;
     
@@ -21,8 +21,6 @@ public class Connection {
     public boolean finSeen;
 
     public Connection() {
-        long now = System.nanoTime();
-        this.firstSeen = now;
-        this.lastSeen = now;
+        // Timestamps will be initialized explicitly by ConnectionTracker using PCAP time
     }
 }

@@ -37,14 +37,18 @@ public class FastPathProcessor implements Runnable {
 
     private final boolean verbose;
     private final DPIStats globalStats;
+    private final long flowTimeoutSec;
+    private final long cleanupWindowSec;
 
-    public FastPathProcessor(int fpId, RuleManager ruleManager, DPIStats globalStats, boolean verbose, PacketOutputCallback outputCallback) {
+    public FastPathProcessor(int fpId, RuleManager ruleManager, DPIStats globalStats, boolean verbose, long flowTimeoutSec, long cleanupWindowSec, PacketOutputCallback outputCallback) {
         this.fpId = fpId;
         this.inputQueue = new LinkedBlockingQueue<>(10000);
         this.connTracker = new ConnectionTracker(fpId, 50000); // Max connections per FP
         this.ruleManager = ruleManager;
         this.globalStats = globalStats;
         this.verbose = verbose;
+        this.flowTimeoutSec = flowTimeoutSec;
+        this.cleanupWindowSec = cleanupWindowSec;
         this.outputCallback = outputCallback;
     }
 
@@ -87,6 +91,7 @@ public class FastPathProcessor implements Runnable {
         public long packetsForwarded;
         public long packetsDropped;
         public long connectionsTracked;
+        public long evictedConnections;
         public long sniExtractions;
         public long classificationHits;
     }
@@ -97,6 +102,7 @@ public class FastPathProcessor implements Runnable {
         stats.packetsForwarded = packetsForwarded.get();
         stats.packetsDropped = packetsDropped.get();
         stats.connectionsTracked = connTracker.getActiveCount();
+        stats.evictedConnections = connTracker.getStats().evictedConnections;
         stats.sniExtractions = sniExtractions.get();
         stats.classificationHits = classificationHits.get();
         return stats;
@@ -104,19 +110,11 @@ public class FastPathProcessor implements Runnable {
 
     @Override
     public void run() {
-        long lastCleanup = System.nanoTime();
-        long cleanupInterval = TimeUnit.SECONDS.toNanos(10);
-
         while (running.get()) {
             try {
                 PacketJob job = inputQueue.poll(100, TimeUnit.MILLISECONDS);
                 if (job == null) {
-                    long now = System.nanoTime();
-                    if (now - lastCleanup > cleanupInterval) {
-                        connTracker.cleanupStale(TimeUnit.SECONDS.toNanos(300));
-                        lastCleanup = now;
-                    }
-                    continue;
+                    continue; // Timeout sweep removed, relying on PCAP timestamps
                 }
 
                 packetsProcessed.incrementAndGet();
@@ -144,13 +142,20 @@ public class FastPathProcessor implements Runnable {
     }
 
     private RuleManager.BlockReason processPacket(PacketJob job) {
-        Connection conn = connTracker.getOrCreateConnection(job.tuple);
+        Connection conn = connTracker.getOrCreateConnection(job.tuple, job.tsSec);
         if (conn == null) {
             return null; // FORWARD
         }
 
-        // Outbound is true
-        connTracker.updateConnection(conn, job.data.length, true);
+        // Outbound is true for simplistic updating
+        connTracker.updateConnection(conn, job.data.length, true, job.tsSec);
+
+        // PCAP Time-based cleanup
+        long currentTs = connTracker.getCurrentPcapTsSec();
+        if (currentTs - connTracker.getLastCleanupTsSec() >= cleanupWindowSec) {
+            connTracker.cleanupStale(currentTs, flowTimeoutSec);
+            connTracker.setLastCleanupTsSec(currentTs);
+        }
 
         if (job.tuple.protocol == 6) { // TCP
             updateTCPState(conn, job.tcpFlags);

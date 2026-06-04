@@ -19,10 +19,17 @@ public class AnalyticsCollector {
     private final Map<AppType, GlobalAppStats> appStats = new HashMap<>();
     private final Map<String, Long> domainStats = new HashMap<>();
     private final Map<Integer, Long> topTalkers = new HashMap<>();
+    
+    private long activeFlows = 0;
+    private long evictedFlows = 0;
 
     public void collect(GlobalConnectionTable globalConnTable) {
         for (ConnectionTracker tracker : globalConnTable.getTrackers()) {
             if (tracker == null) continue;
+
+            ConnectionTracker.TrackerStats stats = tracker.getStats();
+            activeFlows += stats.activeConnections;
+            evictedFlows += stats.evictedConnections;
 
             // 1. Process active connections
             for (Connection conn : tracker.getAllConnections()) {
@@ -62,4 +69,7 @@ public class AnalyticsCollector {
     public Map<AppType, GlobalAppStats> getAppStats() { return appStats; }
     public Map<String, Long> getDomainStats() { return domainStats; }
     public Map<Integer, Long> getTopTalkers() { return topTalkers; }
+    
+    public long getActiveFlows() { return activeFlows; }
+    public long getEvictedFlows() { return evictedFlows; }
 }
