@@ -51,7 +51,7 @@ public class DpiEngine {
         this.config = config;
 
         System.out.println("\n╔══════════════════════════════════════════════════════════════╗");
-        System.out.println("║                    DPI ENGINE v1.3                           ║");
+        System.out.println("║                    DPI ENGINE v1.4                           ║");
         System.out.println("║               Deep Packet Inspection System                  ║");
         System.out.println("╠══════════════════════════════════════════════════════════════╣");
         System.out.println("║ CONFIGURATION                                                ║");
@@ -190,7 +190,7 @@ public class DpiEngine {
         System.out.print(globalConnTable.generateReport());
 
         long runtimeMs = System.currentTimeMillis() - startTime;
-        AnalyticsManager.exportAll(stats, globalConnTable, inputFile, runtimeMs, config.flowTimeoutSec);
+        AnalyticsManager.exportAll(stats, globalConnTable, ruleManager, inputFile, runtimeMs, config.flowTimeoutSec);
 
         return true;
     }
@@ -397,6 +397,24 @@ public class DpiEngine {
             ss.append(String.format("║   Hit - By Port:                 %15d             ║\n", stats.blockedByPort.get()));
             ss.append(String.format("║   Hit - By App:                  %15d             ║\n", stats.blockedByApp.get()));
             ss.append(String.format("║   Total Blocked Flows:           %15d             ║\n", totalBlockedFlows));
+
+            java.util.Map<String, Long> ruleHits = ruleManager.getRuleHitCounts();
+            if (!ruleHits.isEmpty()) {
+                ss.append("║                                                              ║\n");
+                ss.append("║   Top Triggered Rules:                                       ║\n");
+                List<java.util.Map.Entry<String, Long>> sortedRules = new ArrayList<>(ruleHits.entrySet());
+                sortedRules.sort((a, b) -> b.getValue().compareTo(a.getValue()));
+                int count = 0;
+                for (java.util.Map.Entry<String, Long> entry : sortedRules) {
+                    if (count >= 5) break;
+                    String ruleStr = entry.getKey();
+                    if (ruleStr.length() > 30) {
+                        ruleStr = ruleStr.substring(0, 27) + "...";
+                    }
+                    ss.append(String.format("║     %-30s %15d             ║\n", ruleStr, entry.getValue()));
+                    count++;
+                }
+            }
         }
 
         ss.append("╠══════════════════════════════════════════════════════════════╣\n");

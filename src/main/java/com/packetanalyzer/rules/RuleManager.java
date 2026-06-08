@@ -8,6 +8,8 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.regex.Pattern;
 
@@ -25,6 +27,8 @@ public class RuleManager {
 
     private final Set<Integer> blockedPorts = new HashSet<>();
     private final ReentrantReadWriteLock portLock = new ReentrantReadWriteLock();
+
+    private final ConcurrentHashMap<String, AtomicLong> ruleHitCounts = new ConcurrentHashMap<>();
 
     public static class BlockReason {
         public enum Type { IP, APP, DOMAIN, PORT }
@@ -46,6 +50,20 @@ public class RuleManager {
         public int blockedApps;
         public int blockedDomains;
         public int blockedPorts;
+    }
+
+    public void recordHit(BlockReason reason) {
+        if (reason == null) return;
+        ruleHitCounts.computeIfAbsent(reason.getFormattedRule(), k -> new AtomicLong(0))
+                     .incrementAndGet();
+    }
+
+    public Map<String, Long> getRuleHitCounts() {
+        Map<String, Long> result = new HashMap<>();
+        for (Map.Entry<String, AtomicLong> entry : ruleHitCounts.entrySet()) {
+            result.put(entry.getKey(), entry.getValue().get());
+        }
+        return result;
     }
 
     public void blockIP(String ip) {

@@ -183,15 +183,15 @@ public class FastPathProcessor implements Runnable {
         if (job.tuple.dstPort == 53 || job.tuple.srcPort == 53) {
             Optional<String> domain = DnsExtractor.extractQuery(job.data, job.payloadOffset, job.payloadLength);
             if (domain.isPresent()) {
-                connTracker.classifyConnection(conn, AppType.DNS, domain.get());
+                connTracker.classifyConnection(conn, AppType.DNS, domain.get(), ConfidenceLevel.MEDIUM);
                 return;
             }
         }
 
         if (job.tuple.dstPort == 80) {
-            connTracker.classifyConnection(conn, AppType.HTTP, "");
+            connTracker.classifyConnection(conn, AppType.HTTP, "", ConfidenceLevel.LOW);
         } else if (job.tuple.dstPort == 443) {
-            connTracker.classifyConnection(conn, AppType.HTTPS, "");
+            connTracker.classifyConnection(conn, AppType.HTTPS, "", ConfidenceLevel.LOW);
         }
     }
 
@@ -205,7 +205,8 @@ public class FastPathProcessor implements Runnable {
             sniExtractions.incrementAndGet();
 
             AppType app = AppType.fromSni(sni);
-            connTracker.classifyConnection(conn, app, sni);
+            ConfidenceLevel conf = (app != AppType.UNKNOWN && app != AppType.HTTPS) ? ConfidenceLevel.HIGH : ConfidenceLevel.MEDIUM;
+            connTracker.classifyConnection(conn, app, sni, conf);
 
             if (app != AppType.UNKNOWN && app != AppType.HTTPS) {
                 classificationHits.incrementAndGet();
@@ -223,7 +224,8 @@ public class FastPathProcessor implements Runnable {
         if (hostOpt.isPresent()) {
             String host = hostOpt.get();
             AppType app = AppType.fromSni(host);
-            connTracker.classifyConnection(conn, app, host);
+            ConfidenceLevel conf = (app != AppType.UNKNOWN && app != AppType.HTTP) ? ConfidenceLevel.HIGH : ConfidenceLevel.MEDIUM;
+            connTracker.classifyConnection(conn, app, host, conf);
 
             if (app != AppType.UNKNOWN && app != AppType.HTTP) {
                 classificationHits.incrementAndGet();
@@ -242,6 +244,7 @@ public class FastPathProcessor implements Runnable {
 
         if (reasonOpt.isPresent()) {
             RuleManager.BlockReason br = reasonOpt.get();
+            ruleManager.recordHit(br);
             if (verbose) {
                 System.out.println("[BLOCKED]");
                 System.out.println("Flow: " + ByteUtils.ipToString(job.tuple.srcIp) + ":" + job.tuple.srcPort + " -> " + 

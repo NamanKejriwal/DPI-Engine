@@ -16,6 +16,8 @@ public class Connection {
     
     public PacketAction action = PacketAction.FORWARD;
     
+    public ConfidenceLevel confidence = ConfidenceLevel.LOW;
+    
     public boolean synSeen;
     public boolean synAckSeen;
     public boolean finSeen;

@@ -1,6 +1,7 @@
 package com.packetanalyzer.tracking;
 
 import com.packetanalyzer.types.AppType;
+import com.packetanalyzer.types.ConfidenceLevel;
 import com.packetanalyzer.types.Connection;
 import com.packetanalyzer.types.ConnectionState;
 import com.packetanalyzer.types.FiveTuple;
@@ -98,12 +99,13 @@ public class ConnectionTracker {
         }
     }
 
-    public void classifyConnection(Connection conn, AppType app, String sni) {
+    public void classifyConnection(Connection conn, AppType app, String sni, ConfidenceLevel confidence) {
         if (conn == null) return;
         
         if (conn.state != ConnectionState.CLASSIFIED) {
             conn.appType = app;
             conn.sni = sni;
+            conn.confidence = confidence;
             conn.state = ConnectionState.CLASSIFIED;
             classifiedCount++;
         }

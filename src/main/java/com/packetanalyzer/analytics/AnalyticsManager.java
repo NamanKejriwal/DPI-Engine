@@ -2,13 +2,14 @@ package com.packetanalyzer.analytics;
 
 import com.packetanalyzer.tracking.GlobalConnectionTable;
 import com.packetanalyzer.types.DPIStats;
+import com.packetanalyzer.rules.RuleManager;
 
 import java.io.File;
 import java.io.IOException;
 
 public class AnalyticsManager {
     
-    public static void exportAll(DPIStats stats, GlobalConnectionTable globalConnTable, String inputFile, long runtimeMs, long flowTimeoutSec) {
+    public static void exportAll(DPIStats stats, GlobalConnectionTable globalConnTable, RuleManager ruleManager, String inputFile, long runtimeMs, long flowTimeoutSec) {
         String outputDir = "reports";
         File dir = new File(outputDir);
         if (!dir.exists()) {
@@ -30,7 +31,7 @@ public class AnalyticsManager {
             CsvExporter.exportDomains(outputDir, collector.getDomainStats());
             CsvExporter.exportConnections(outputDir, globalConnTable);
             CsvExporter.exportTopTalkers(outputDir, collector.getTopTalkers());
-            CsvExporter.exportRules(outputDir, stats);
+            CsvExporter.exportRules(outputDir, ruleManager);
             
             System.out.println("\n[AnalyticsManager] Reports successfully exported to " + outputDir + "/");
         } catch (IOException e) {

@@ -79,7 +79,7 @@ public class JsonExporter {
     public static void exportMetadata(String outputDir, String inputFile, long runtimeMs) throws IOException {
         StringBuilder sb = new StringBuilder();
         sb.append("{\n");
-        sb.append("  \"engineVersion\": \"v1.2\",\n");
+        sb.append("  \"engineVersion\": \"v1.4\",\n");
         sb.append("  \"generatedAt\": \"").append(java.time.Instant.now().toString()).append("\",\n");
         sb.append("  \"inputFile\": \"").append(inputFile.replace("\\", "\\\\").replace("\"", "\\\"")).append("\",\n");
         sb.append("  \"processingTimeMs\": ").append(runtimeMs).append("\n");

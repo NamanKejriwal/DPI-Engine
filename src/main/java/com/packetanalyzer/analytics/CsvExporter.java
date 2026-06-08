@@ -3,6 +3,7 @@ package com.packetanalyzer.analytics;
 import com.packetanalyzer.io.ByteUtils;
 import com.packetanalyzer.tracking.GlobalConnectionTable;
 import com.packetanalyzer.tracking.ConnectionTracker;
+import com.packetanalyzer.rules.RuleManager;
 import com.packetanalyzer.types.AppType;
 import com.packetanalyzer.types.Connection;
 import com.packetanalyzer.types.DPIStats;
@@ -58,17 +59,18 @@ public class CsvExporter {
 
     public static void exportConnections(String outputDir, GlobalConnectionTable globalConnTable) throws IOException {
         StringBuilder sb = new StringBuilder();
-        sb.append("SourceIP,DestinationIP,Application,PacketCount,State\n");
+        sb.append("SourceIP,DestinationIP,Application,PacketCount,State,Confidence\n");
         
         for (ConnectionTracker tracker : globalConnTable.getTrackers()) {
             if (tracker == null) continue;
             for (Connection conn : tracker.getAllConnections()) {
-                sb.append(String.format("%s,%s,%s,%d,%s\n",
+                sb.append(String.format("%s,%s,%s,%d,%s,%s\n",
                     ByteUtils.ipToString(conn.tuple.srcIp),
                     ByteUtils.ipToString(conn.tuple.dstIp),
                     conn.appType.getDisplayName(),
                     conn.packetsIn + conn.packetsOut,
-                    conn.state.name()
+                    conn.state.name(),
+                    conn.confidence.name()
                 ));
             }
         }
@@ -90,13 +92,22 @@ public class CsvExporter {
         Files.writeString(Paths.get(outputDir, "top-talkers.csv"), sb.toString());
     }
 
-    public static void exportRules(String outputDir, DPIStats stats) throws IOException {
+    public static void exportRules(String outputDir, RuleManager ruleManager) throws IOException {
         StringBuilder sb = new StringBuilder();
-        sb.append("RuleType,BlockedCount\n");
-        sb.append("DOMAIN,").append(stats.blockedByDomain.get()).append("\n");
-        sb.append("IP,").append(stats.blockedByIp.get()).append("\n");
-        sb.append("PORT,").append(stats.blockedByPort.get()).append("\n");
-        sb.append("APPLICATION,").append(stats.blockedByApp.get()).append("\n");
+        sb.append("Rule,Type,HitCount\n");
+        
+        if (ruleManager != null) {
+            Map<String, Long> hits = ruleManager.getRuleHitCounts();
+            List<Map.Entry<String, Long>> sorted = new ArrayList<>(hits.entrySet());
+            sorted.sort((a, b) -> b.getValue().compareTo(a.getValue()));
+            
+            for (Map.Entry<String, Long> entry : sorted) {
+                String ruleStr = entry.getKey();
+                String type = ruleStr.startsWith("BLOCK_") ? ruleStr.substring(6, ruleStr.indexOf('=')) : "UNKNOWN";
+                sb.append(String.format("%s,%s,%d\n", ruleStr, type, entry.getValue()));
+            }
+        }
+        
         Files.writeString(Paths.get(outputDir, "rules.csv"), sb.toString());
     }
 }
