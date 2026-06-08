@@ -1,19 +1,59 @@
-
-
 <div align="center">
 
 # DPI Engine
 
-**High-Performance Multi-threaded Deep Packet Inspection Engine**
+**Multi-threaded Deep Packet Inspection & Network Traffic Analysis Engine**
 
 [![Java](https://img.shields.io/badge/Java-21-orange.svg)](#)
 [![Maven](https://img.shields.io/badge/Maven-3.9+-C71A36.svg)](#)
-[![Version](https://img.shields.io/badge/Version-v1.3-blue.svg)](#)
-[![Release](https://img.shields.io/badge/Releases-4-success.svg)](#)
+[![Version](https://img.shields.io/badge/Version-v1.4-blue.svg)](#)
 
 A concurrent Deep Packet Inspection (DPI) system built in Java 21 for offline network traffic analysis, application identification, custom traffic filtering, connection tracking, analytics export, and deterministic flow lifecycle management.
 
 </div>
+
+---
+
+## Highlights
+
+- Multi-threaded DPI Engine built in Java 21
+- Five-Tuple Flow Tracking
+- Layer 7 Application Identification
+- PCAP-Time Flow Lifecycle Management
+- Domain/IP/Port/Application Filtering
+- CSV & JSON Analytics Pipeline
+- Protocol Confidence Scoring
+- Flow-Based Rule Telemetry
+
+---
+
+## Skills Demonstrated
+
+- Java 21
+- Multithreading
+- Producer–Consumer Architecture
+- Concurrent Collections
+- Network Protocol Parsing
+- Deep Packet Inspection
+- TCP/IP Networking
+- Flow Tracking
+- PCAP Processing
+- Analytics Pipelines
+
+---
+
+## Feature Matrix
+
+| Capability | Status |
+|------------|---------|
+| Multi-threaded Processing | ✅ |
+| Five-Tuple Flow Tracking | ✅ |
+| Layer 7 Classification | ✅ |
+| Rule Engine | ✅ |
+| Analytics Export | ✅ |
+| Flow Lifecycle Management | ✅ |
+| Protocol Confidence Scoring | ✅ |
+| Per-Rule Hit Counts | ✅ |
 
 ---
 
@@ -45,7 +85,6 @@ A concurrent Deep Packet Inspection (DPI) system built in Java 21 for offline ne
 - [Technical Challenges Solved](#technical-challenges-solved)
 - [Release Summary](#release-summary)
 - [Release History](#release-history)
-- [Roadmap](#roadmap)
 - [Key Technical Concepts](#key-technical-concepts)
 - [Learning Outcomes](#learning-outcomes)
 - [License](#license)
@@ -65,8 +104,7 @@ Designed around a multi-threaded producer-consumer pipeline, the engine provides
 | Metric | Value |
 |----------|----------|
 | Java Version | 21 |
-| Source Files | 28 |
-| Releases Implemented | 4 |
+| Source Files | 29 |
 | Supported Applications | 16 |
 | Report Types | 9 |
 | Rule Types | 4 |
@@ -267,6 +305,58 @@ sequenceDiagram
 
 ---
 
+## Protocol Confidence Scoring (v1.4)
+
+### Problem Statement
+Network traffic often utilizes common ports (e.g., 443) for varying protocols, and sometimes applications run on non-standard ports. Without knowing how a flow was classified, users cannot gauge the reliability of the classification.
+
+### Why Confidence Scoring Was Needed
+DPI Engine uses multiple extraction techniques: deterministic Layer 7 payload parsing (highly accurate) and port-based fallbacks (less accurate). Exposing the confidence level allows downstream analytics to filter or weight results based on classification accuracy.
+
+### Confidence Model
+
+The engine employs a straightforward `HIGH`, `MEDIUM`, `LOW` confidence model directly tied to the deterministic strength of the extraction.
+
+| Confidence | Source                  |
+| ---------- | ----------------------- |
+| HIGH       | TLS SNI, HTTP Host      |
+| MEDIUM     | DNS                     |
+| LOW        | Port fallback / Unknown |
+
+### Design Decisions
+To maintain optimal memory performance and O(1) flow eviction, confidence scores are tracked strictly for active flows. When a flow is evicted due to timeout, its historical packet and byte counts are aggregated, but individual confidence states are intentionally discarded.
+
+### Example Output
+The `connections.csv` export now includes the `Confidence` column:
+```csv
+SourceIP,DestinationIP,Application,PacketCount,State,Confidence
+192.168.1.5,142.250.190.46,HTTPS,14,CLASSIFIED,HIGH
+10.0.0.2,8.8.8.8,DNS,2,CLASSIFIED,MEDIUM
+```
+
+---
+
+## Per-Rule Hit Counts (v1.4)
+
+### Problem Statement
+Previously, the engine only tracked aggregate totals of blocked flows (e.g., "Hit - By Domain: 45"). Administrators had no visibility into exactly *which* specific domains or IPs within the rule set were actively dropping traffic.
+
+### Why Flow-Based Counting Was Chosen
+Counting every single dropped packet for a blocked connection creates highly skewed metrics (a single large blocked download could register 10,000 rule hits). Flow-based counting ensures that a triggered rule is incremented exactly once per malicious connection, providing an accurate representation of adversarial intent.
+
+### Architecture Overview
+The `RuleManager` utilizes a lock-free `ConcurrentHashMap` combined with `AtomicLong` counters to track exact rule hits. The `FastPathProcessor` guarantees flow-based semantics by immediately terminating payload inspection for connections already marked as `BLOCKED`, preventing duplicate hits for subsequent packets.
+
+### Example Output
+The `rules.csv` export now lists every triggered rule and its exact flow hit count:
+```csv
+Rule,Type,HitCount
+BLOCK_DOMAIN=www.google.com,DOMAIN,2
+BLOCK_PORT=4444,PORT,8
+```
+
+---
+
 ## Concurrency Model
 
 ```mermaid
@@ -359,9 +449,9 @@ Upon completion, the engine exports zero-dependency analytics into the `reports/
 | `domain-distribution.json` | JSON | Percentage breakdown of top domain accesses |
 | `applications.csv` | CSV | Raw packet, byte, and connection counts per app |
 | `domains.csv` | CSV | Access counts per unique fully-qualified domain name |
-| `connections.csv` | CSV | Exhaustive list of all tracked L4 connections |
+| `connections.csv` | CSV | Exhaustive list of tracked active L4 connections with Confidence scoring |
 | `top-talkers.csv` | CSV | Traffic counts grouped by internal IP |
-| `rules.csv` | CSV | Hit counts across all active rule domains |
+| `rules.csv` | CSV | Exact hit counts for every triggered filtering rule |
 
 ---
 
@@ -397,15 +487,22 @@ The executable JAR will be located at `target/dpi-engine-1.0-SNAPSHOT.jar`.
 java -jar target/dpi-engine-1.0-SNAPSHOT.jar input.pcap output.pcap
 ```
 
-*Note: Rules are automatically loaded from `rules.txt` in the active directory if configured in the code logic.*
+**Execution With Rules:**
+```bash
+java -jar target/dpi-engine-1.0-SNAPSHOT.jar input.pcap output.pcap -r rules.txt
+```
+
+*Note: Rules are only loaded when the `-r` or `--rules` argument is provided.*
 
 ---
 
 ## Example Terminal Output
 
+*Note: The values below were generated during flow lifecycle validation using a temporary 1-second timeout.*
+
 ```text
 ╔══════════════════════════════════════════════════════════════╗
-║                    DPI ENGINE v1.3                           ║
+║                    DPI ENGINE v1.4                           ║
 ║               Deep Packet Inspection System                  ║
 ╠══════════════════════════════════════════════════════════════╣
 ║ CONFIGURATION                                                ║
@@ -455,11 +552,14 @@ java -jar target/dpi-engine-1.0-SNAPSHOT.jar input.pcap output.pcap
 ╠══════════════════════════════════════════════════════════════╣
 ║ RULE STATISTICS                                              ║
 ║   Loaded Rules:                             3                ║
-║   Hit - By Domain:                          0                ║
+║   Hit - By Domain:                          2                ║
 ║   Hit - By IP:                              0                ║
 ║   Hit - By Port:                            0                ║
 ║   Hit - By App:                             0                ║
-║   Total Blocked Flows:                      0                ║
+║   Total Blocked Flows:                      2                ║
+║                                                              ║
+║   Top Triggered Rules:                                       ║
+║     BLOCK_DOMAIN=www.google.com               2              ║
 ╠══════════════════════════════════════════════════════════════╣
 ║ EXPORT STATUS                                                ║
 ║   Reports Directory:                 reports/                ║
@@ -503,6 +603,17 @@ YouTube,1,3,247,2.33
 ## Validation Results
 
 The DPI Engine was validated using a representative PCAP capture containing 77 packets spanning multiple TCP and UDP flows, DNS queries, TLS handshakes, and application-identification scenarios.
+
+### v1.4 Validation Results
+
+| Feature                          | Status |
+| -------------------------------- | ------ |
+| HIGH Confidence Classification   | PASS   |
+| MEDIUM Confidence Classification | PASS   |
+| LOW Confidence Classification    | PASS   |
+| Rule Hit Counting                | PASS   |
+| Flow-Based Counting              | PASS   |
+| Flow Lifecycle Regression        | PASS   |
 
 ### Functional Validation
 
@@ -573,6 +684,7 @@ The engine maximizes single-node hardware capabilities through its concurrent pi
 | v1.1 | Dynamic Rule Engine |
 | v1.2 | Analytics Export Framework |
 | v1.3 | Flow Lifecycle Management |
+| v1.4 | Protocol Confidence Scoring & Per-Rule Hit Counts |
 
 ---
 
@@ -589,15 +701,9 @@ timeline
                      : App & Domain Tracking
     v1.3 Lifecycle   : PCAP-Time Flow Eviction
                      : Deterministic Flow Management
+    v1.4 Observability: Protocol Confidence Scoring
+                     : Per-Rule Hit Counts
 ```
-
----
-
-## Roadmap
-
-- **v1.4** QUIC / HTTP3 Detection
-- **v1.5** Enhanced Application Identification
-- **v1.6** Performance Dashboard
 
 ---
 
