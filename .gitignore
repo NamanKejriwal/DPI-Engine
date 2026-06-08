@@ -1,14 +1,14 @@
 target/
 *.class
 *.jar
+
 .DS_Store
+
 .idea/
 .vscode/
 *.iml
 
-java_output.pcap
-*.pcap
-
-rules.txt
-
 reports/
+
+output.pcap
+java_output.pcap
