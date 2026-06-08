@@ -10,5 +10,8 @@ target/
 
 reports/
 
-output.pcap
-java_output.pcap
+# Generated PCAPs
+*.pcap
+
+# Keep sample capture
+!samples/test_dpi.pcap
