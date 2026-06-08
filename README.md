@@ -27,6 +27,15 @@ A concurrent Deep Packet Inspection (DPI) system built in Java 21 for offline ne
 
 ---
 
+## Repository Layout
+
+- src/ → Engine implementation
+- samples/ → Example PCAPs
+- scripts/ → Test-data generation utilities
+- rules.txt → Example rule configuration
+
+---
+
 ## Skills Demonstrated
 
 - Java 21
@@ -104,7 +113,7 @@ Designed around a multi-threaded producer-consumer pipeline, the engine provides
 | Metric | Value |
 |----------|----------|
 | Java Version | 21 |
-| Source Files | 29 |
+| Source Files | 28 |
 | Supported Applications | 16 |
 | Report Types | 9 |
 | Rule Types | 4 |
@@ -397,16 +406,27 @@ graph TD
 ## Project Structure
 
 ```text
-src/main/java/com/packetanalyzer
-│
-├── analytics          # Export frameworks, JSON/CSV generators
-├── engine             # Core threads (LB, FastPath, DpiEngine)
-├── extractors         # L7 Protocol logic (SNI, HTTP, DNS)
-├── io                 # Byte manipulation, PCAP reading/writing
-├── parser             # Stateless packet header deserialization
-├── rules              # Dynamic rule loading and evaluation
-├── tracking           # Thread-local state and connection tables
-└── types              # Core data models (FiveTuple, ParsedPacket)
+DPI-Engine/
+├── LICENSE
+├── README.md
+├── pom.xml
+├── rules.txt
+├── samples/
+│   └── test_dpi.pcap
+├── scripts/
+│   └── generate_test_pcap.py
+└── src/
+    └── main/
+        └── java/
+            └── com/packetanalyzer/
+                ├── analytics/
+                ├── engine/
+                ├── extractors/
+                ├── io/
+                ├── parser/
+                ├── rules/
+                ├── tracking/
+                └── types/
 ```
 
 ---
@@ -463,7 +483,7 @@ Upon completion, the engine exports zero-dependency analytics into the `reports/
 
 ```bash
 git clone https://github.com/NamanKejriwal/DPI-Engine.git
-cd DPI-Engine/java-dpi
+cd DPI-Engine
 ```
 
 ---
@@ -521,7 +541,7 @@ java -jar target/dpi-engine-1.0-SNAPSHOT.jar input.pcap output.pcap -r rules.txt
 ║   Applications:                                1             ║
 ╚══════════════════════════════════════════════════════════════╝
 
-[DPIEngine] Processing: samples/traffic.pcap
+[DPIEngine] Processing: samples/test_dpi.pcap
 [DPIEngine] Output to:  out.pcap
 
 ╔══════════════════════════════════════════════════════════════╗
@@ -629,7 +649,7 @@ The DPI Engine was validated using a representative PCAP capture containing 77 p
 | Analytics Export | PASS |
 | Rule Engine Integration | PASS |
 
-### Flow Lifecycle Validation
+### Example Validation Run
 
 To verify flow eviction behavior, the flow timeout was temporarily reduced from the production value of **300 seconds** to **1 second**.
 
@@ -739,4 +759,4 @@ This project demonstrates practical experience in:
 
 ## License
 
-This project is intended for educational and research purposes.
+Licensed under the MIT License. See LICENSE for details.
